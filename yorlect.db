@@ -1,0 +1,9 @@
+DB_PATH = Path("yorlect.db")
+conn = init_db()
+def init_db():
+    conn = sqlite3.connect(DB_PATH, check_same_thread=False)
+    cur = conn.cursor()
+    cur.execute("""CREATE TABLE IF NOT EXISTS users (...""")
+    cur.execute("""CREATE TABLE IF NOT EXISTS recordings (...""")
+    conn.commit()
+    return conn
