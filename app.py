@@ -31,9 +31,15 @@ except Exception:
 # --- Constants / settings ---
 DATA_DIR = Path("data")
 DB_PATH = Path("yorlect.db")
-ADMIN_PASS = os.environ.get("YORLECT_ADMIN_PASS", "yorlect_admin")  
-RECORDINGS_TARGET_PER_USER = 30  
 
+# Prefer secret from .streamlit/secrets.toml or Streamlit Cloud Secrets
+ADMIN_PASS = (
+    st.secrets.get("YORLECT_ADMIN_PASS")
+    or os.environ.get("YORLECT_ADMIN_PASS")
+    or "yorlect_admin"  
+)
+
+RECORDINGS_TARGET_PER_USER = 30  
 DATA_DIR.mkdir(exist_ok=True)
 
 # --- Database helpers ---
