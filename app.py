@@ -9,7 +9,7 @@ import zipfile
 import numpy as np
 
 # ---------- Configuration ----------
-st.set_page_config(page_title="Speech Data Curation (High-Quality)", layout="wide")
+st.set_page_config(page_title="Speech Data Curation (Start/Stop)", layout="wide")
 
 DEFAULT_ADMIN_PASSWORD = "adminpass"
 BASE_DIR = Path("recordings")
@@ -57,10 +57,16 @@ def _plot_waveform(audio_bytes):
     except Exception:
         st.warning("Unable to plot waveform.")
 
+# ---------- Session state for start/stop ----------
+if "recording_state" not in st.session_state:
+    st.session_state.recording_state = False
+if "current_audio" not in st.session_state:
+    st.session_state.current_audio = None
+
 # ---------- UI ----------
-st.title("🎤 Speech Data Curation — Multi-Recording High-Quality")
+st.title("🎤 Speech Data Curation — Start/Stop High-Quality")
 st.markdown(
-    "Record multiple high-quality speech samples. Waveform shown for verification. Admin sees recordings immediately."
+    "Record multiple high-quality speech samples using explicit Start/Stop buttons. Waveform shown for verification. Admin sees recordings immediately."
 )
 
 st.sidebar.header("Quick actions")
@@ -86,24 +92,32 @@ if mode == "Record (User)":
             with st.expander("Optional: text prompt for the speaker"):
                 prompt_text = st.text_area("Prompt (e.g., sentence to read)", value="Please read this sentence aloud.", height=80)
 
-            st.markdown("**Press the mic to start/stop recording**")
+            # Start / Stop buttons
+            col1, col2 = st.columns(2)
+            with col1:
+                if st.button("▶ Start Recording"):
+                    st.session_state.recording_state = True
+            with col2:
+                if st.button("⏹ Stop Recording"):
+                    st.session_state.recording_state = False
 
-            # Recorder with WAV output (high quality)
-            audio_bytes = audio_recorder(
-                text="Click to record",
-                recording_color="#FF3333",
-                neutral_color="#6aa36f"
-            )
+            audio_bytes = None
+            if st.session_state.recording_state:
+                st.info("Recording... Click Stop when done.")
+                audio_bytes = audio_recorder(
+                    text="Recording...",
+                    recording_color="#FF3333",
+                    neutral_color="#6aa36f"
+                )
 
             if audio_bytes:
-                # Save file with timestamp
+                # Save recording
                 ts = int(time.time())
                 filename = f"{safe_username}_{ts}.wav"
                 filepath = user_dir / filename
                 with open(filepath, "wb") as f:
                     f.write(audio_bytes)
 
-                # Update metadata
                 metadata = _load_metadata(user_dir)
                 entry = {
                     "filename": filename,
@@ -121,6 +135,9 @@ if mode == "Record (User)":
                 # Waveform
                 st.subheader("📊 Waveform")
                 _plot_waveform(audio_bytes)
+
+                # Reset session_state for next recording
+                st.session_state.current_audio = audio_bytes
 
             # Show all previous recordings for this user
             st.subheader("🗂️ Your previous recordings")
