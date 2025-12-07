@@ -1,98 +1,45 @@
 import streamlit as st
-import os
-import base64
+from audio_recorder_streamlit import audio_recorder
 import time
+import os
 
-st.set_page_config(page_title="Speech Data Curation", layout="centered")
+st.set_page_config(page_title="Speech Data Curation")
 
 st.title("🎤 Speech Data Curation App")
-st.write("Click *Start Recording* → record your speech → click *Stop Recording* → save the audio.")
+st.write("Click the microphone icon to record speech.")
 
-# Make folder
+# ensure output folder exists
 os.makedirs("recordings", exist_ok=True)
 
-# HTML + JS widget
-record_component = """
-    <script>
-    let mediaRecorder;
-    let audioChunks = [];
+# UI: Microphone widget
+audio_bytes = audio_recorder(
+    text="Click to record",
+    recording_color="#FF3333",
+    neutral_color="#6aa36f",
+    icon_name="microphone",
+    icon_size="3x",
+)
 
-    function startRecording() {
-        navigator.mediaDevices.getUserMedia({ audio: true })
-        .then(stream => {
-            mediaRecorder = new MediaRecorder(stream);
-
-            mediaRecorder.ondataavailable = e => {
-                audioChunks.push(e.data);
-            };
-
-            mediaRecorder.onstop = () => {
-                let blob = new Blob(audioChunks, { type: 'audio/webm' });
-                audioChunks = [];
-
-                let reader = new FileReader();
-                reader.readAsDataURL(blob);
-                reader.onloadend = () => {
-                    let base64Data = reader.result;
-                    window.parent.postMessage({ type: 'audio', data: base64Data }, "*");
-                };
-            };
-
-            mediaRecorder.start();
-        });
-    }
-
-    function stopRecording() {
-        mediaRecorder.stop();
-    }
-    </script>
-
-    <button onclick="startRecording()">🎙️ Start Recording</button>
-    <button onclick="stopRecording()">⏹ Stop Recording</button>
-"""
-
-st.markdown(record_component, unsafe_allow_html=True)
-
-# Receive data
-data = st.experimental_get_query_params().get("audio_data", [None])[0]
-
-# Use JS event listener for audio data
-st.markdown("""
-<script>
-window.addEventListener("message", (event) => {
-    if (event.data.type === "audio") {
-        const queryString = window.location.search;
-        const urlParams = new URLSearchParams(queryString);
-        urlParams.set("audio_data", event.data.data);
-        const newUrl = window.location.pathname + '?' + urlParams.toString();
-        window.location.href = newUrl;
-    }
-});
-</script>
-""", unsafe_allow_html=True)
-
-
-if data:
+# When recording is ready
+if audio_bytes:
     st.success("Recording received!")
 
-    # Decode base64
-    header, encoded = data.split(",", 1)
-    audio_bytes = base64.b64decode(encoded)
+    # playback
+    st.audio(audio_bytes, format="audio/wav")
 
-    st.audio(audio_bytes, format="audio/webm")
-
-    filename = f"speech_{int(time.time())}.webm"
+    # save file
+    filename = f"recording_{int(time.time())}.wav"
     filepath = f"recordings/{filename}"
 
-    # Save
     with open(filepath, "wb") as f:
         f.write(audio_bytes)
 
     st.success(f"Saved as {filename}")
 
+    # download
     st.download_button(
-        label="⬇ Download Recording",
-        data=audio_bytes,
+        "⬇ Download audio",
+        audio_bytes,
         file_name=filename,
-        mime="audio/webm",
+        mime="audio/wav",
     )
