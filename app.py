@@ -6,9 +6,10 @@ import json
 from pathlib import Path
 import io
 import zipfile
+import numpy as np
 
 # ---------- Configuration ----------
-st.set_page_config(page_title="Speech Data Curation (Multi-user)", layout="wide")
+st.set_page_config(page_title="Speech Data Curation (Upgraded)", layout="wide")
 
 DEFAULT_ADMIN_PASSWORD = "adminpass"
 BASE_DIR = Path("recordings")
@@ -45,11 +46,21 @@ def _make_zip_bytes(path: Path):
     buf.seek(0)
     return buf.getvalue()
 
+def _plot_waveform(audio_bytes):
+    try:
+        import wave
+        import struct
+        with wave.open(io.BytesIO(audio_bytes), 'rb') as wf:
+            frames = wf.readframes(wf.getnframes())
+            amplitude = np.array(struct.unpack(f'{wf.getnframes()}h', frames))
+        st.line_chart(amplitude)
+    except Exception:
+        st.warning("Unable to plot waveform.")
+
 # ---------- UI ----------
-st.title("🎤 Speech Data Curation — Multi-user")
+st.title("🎤 Speech Data Curation — Multi-user (Upgraded)")
 st.markdown(
-    "Users record from their browser. Admin can view and download every user's recordings. "
-    "This is a **username-only** flow (no passwords for users)."
+    "Record speech, see waveform feedback, previous recordings, and admin can monitor immediately."
 )
 
 st.sidebar.header("Quick actions")
@@ -58,14 +69,14 @@ mode = st.sidebar.radio("Choose view", ["Record (User)", "Admin Dashboard"])
 # ---------- USER RECORDING FLOW ----------
 if mode == "Record (User)":
     st.header("User recording")
-    st.info("Enter a username (no password). The app will store recordings under `recordings/{username}/`")
+    st.info("Enter a username (no password). Recordings auto-save to admin folder.")
 
-    username = st.text_input("Enter your username (e.g., joy, tobi, user34)", value="", max_chars=50)
+    username = st.text_input("Enter your username", value="", max_chars=50)
 
     if username:
         safe_username = "".join(ch for ch in username if ch.isalnum() or ch in ("_", "-")).lower()
         if not safe_username:
-            st.error("Please enter a username containing letters or numbers.")
+            st.error("Username must contain letters or numbers.")
         else:
             user_dir = BASE_DIR / safe_username
             user_dir.mkdir(parents=True, exist_ok=True)
@@ -103,13 +114,30 @@ if mode == "Record (User)":
                 st.audio(audio_bytes, format="audio/wav")
                 st.download_button("⬇ Download this recording", audio_bytes, file_name=filename, mime="audio/wav")
 
+                # Waveform plot
+                st.subheader("📊 Waveform")
+                _plot_waveform(audio_bytes)
+
+            # Show previous recordings
+            st.subheader("🗂️ Your previous recordings")
+            prev_files = _user_recordings(user_dir)
+            if prev_files:
+                for f in reversed(prev_files):
+                    st.markdown(f"**{f.name}**")
+                    with open(f, "rb") as fh:
+                        audio_b = fh.read()
+                    st.audio(audio_b, format="audio/wav")
+                    st.download_button("Download file", audio_b, file_name=f.name, mime="audio/wav", key=f"prev_{f.name}")
+            else:
+                st.info("No previous recordings yet.")
+
     else:
         st.warning("Enter a username to enable the recorder.")
 
 # ---------- ADMIN DASHBOARD ----------
 else:
     st.header("Admin dashboard")
-    st.info("This area is protected by admin password. Set `admin_password` in Streamlit Secrets or use the default (not secure) password.")
+    st.info("Protected by admin password. Set in Streamlit Secrets or default 'adminpass'.")
 
     admin_password = st.secrets.get("admin_password", DEFAULT_ADMIN_PASSWORD) if hasattr(st, "secrets") else DEFAULT_ADMIN_PASSWORD
     entered = st.text_input("Admin password", type="password")
@@ -148,7 +176,6 @@ else:
                                         audio_b = fh.read()
                                 except Exception:
                                     audio_b = None
-
                                 try:
                                     st.chat_message("user").write(f"**{u}** • {ts_iso}")
                                     if prompt:
@@ -199,5 +226,5 @@ else:
     st.markdown("---")
     st.write("Admin tips:")
     st.write("- Set a strong admin password in Streamlit Secrets (key: `admin_password`).")
-    st.write("- To export all users at once, download each user's ZIP from their section.")
+    st.write("- Users’ recordings are auto-saved and visible to admin immediately.")
     st.write("- Optional upgrades: global ZIP export, speaker metadata fields, Whisper transcription.")
