@@ -1,2 +1,4 @@
 streamlit
-streamlit-js-eval
+streamlit-webrtc
+av
+numpy
