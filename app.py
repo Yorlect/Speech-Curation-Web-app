@@ -1,86 +1,72 @@
 import streamlit as st
-from streamlit_js_eval import streamlit_js_eval
-import base64
+from streamlit_webrtc import webrtc_streamer, WebRtcMode, ClientSettings
+import av
+import numpy as np
+import wave
 import time
+import os
 
 st.set_page_config(page_title="Speech Recorder", layout="centered")
 
-st.title("🎤 Speech Recording Web App")
-st.write("Click the button below to start and stop recording.")
+st.title("🎤 Speech Recording App (Working Version)")
+st.write("Press **Start** to begin and **Stop** to finish recording.")
 
-# --- AUDIO RECORDING USING JAVASCRIPT ---
-record = streamlit_js_eval(
-    js_expressions="""
-    var recordAudio = async () => {
-        const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
-        const mediaRecorder = new MediaRecorder(stream);
-        let chunks = [];
+# Folder to save recordings
+os.makedirs("recordings", exist_ok=True)
 
-        mediaRecorder.ondataavailable = e => chunks.push(e.data);
+# Buffer to store audio frames
+audio_frames = []
 
-        mediaRecorder.onstop = e => {
-            let blob = new Blob(chunks, { type: 'audio/webm' });
-            let reader = new FileReader();
-            reader.readAsDataURL(blob);
-            reader.onloadend = () => {
-                let base64data = reader.result;
-                window.parent.postMessage({type:'AUDIO_DATA', data: base64data}, '*');
-            };
-        };
 
-        window.mediaRecorder = mediaRecorder;
-        mediaRecorder.start();
-    };
+def audio_callback(frame: av.AudioFrame):
+    global audio_frames
+    audio = frame.to_ndarray()
+    audio_frames.append(audio)
+    return frame
 
-    var stopRecording = () => {
-        window.mediaRecorder.stop();
-    };
 
-    """,
-    key="init"
+webrtc_streamer(
+    key="speech-recorder",
+    mode=WebRtcMode.SENDONLY,
+    audio_receiver_size=1024,
+    rtc_configuration={"iceServers": [{"urls": ["stun:stun.l.google.com:19302"]}]},
+    client_settings=ClientSettings(
+        media_stream_constraints={"audio": True, "video": False}
+    ),
+    audio_frame_callback=audio_callback,
 )
 
-# Start/Stop buttons
-col1, col2 = st.columns(2)
-with col1:
-    start_btn = st.button("🎙️ Start Recording")
-with col2:
-    stop_btn = st.button("⏹ Stop Recording")
+st.write("")
 
-if start_btn:
-    streamlit_js_eval(js_expressions="recordAudio();", key="start")
+if st.button("💾 Save Recording"):
+    if len(audio_frames) == 0:
+        st.error("No audio recorded yet!")
+    else:
+        # Convert list to numpy array
+        audio_np = np.concatenate(audio_frames, axis=1)
 
-if stop_btn:
-    streamlit_js_eval(js_expressions="stopRecording();", key="stop")
+        # Create WAV file
+        filename = f"recording_{int(time.time())}.wav"
+        filepath = os.path.join("recordings", filename)
 
-# --- RECEIVING AUDIO BACK FROM JS ---
-audio_data = streamlit_js_eval(
-    js_expressions="window.recordedAudioData",
-    key="receive_audio"
-)
+        with wave.open(filepath, "wb") as f:
+            f.setnchannels(1)
+            f.setsampwidth(2)
+            f.setframerate(48000)
+            f.writeframes(audio_np.tobytes())
 
-if audio_data:
-    st.success("Recording complete!")
+        st.success(f"Recording saved as {filename}")
 
-    # Extract Base64 audio
-    header, encoded = audio_data.split(",", 1)
-    audio_bytes = base64.b64decode(encoded)
+        # Provide download button
+        with open(filepath, "rb") as f:
+            audio_bytes = f.read()
 
-    st.audio(audio_bytes, format="audio/webm")
+        st.audio(audio_bytes, format="audio/wav")
+        st.download_button(
+            label="⬇ Download Recording",
+            data=audio_bytes,
+            file_name=filename,
+            mime="audio/wav",
+        )
 
-    # Save file with timestamp
-    filename = f"recording_{int(time.time())}.webm"
-
-    # Download button
-    st.download_button(
-        label="⬇ Download Recording",
-        data=audio_bytes,
-        file_name=filename,
-        mime="audio/webm"
-    )
-
-    # Save to server folder
-    with open(filename, "wb") as f:
-        f.write(audio_bytes)
-
-    st.info(f"Saved as `{filename}` on server.")
+        audio_frames.clear()
