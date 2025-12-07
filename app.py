@@ -1,72 +1,98 @@
 import streamlit as st
-from streamlit_webrtc import webrtc_streamer, WebRtcMode, ClientSettings
-import av
-import numpy as np
-import wave
-import time
 import os
+import base64
+import time
 
-st.set_page_config(page_title="Speech Recorder", layout="centered")
+st.set_page_config(page_title="Speech Data Curation", layout="centered")
 
-st.title("🎤 Speech Recording App (Working Version)")
-st.write("Press **Start** to begin and **Stop** to finish recording.")
+st.title("🎤 Speech Data Curation App")
+st.write("Click *Start Recording* → record your speech → click *Stop Recording* → save the audio.")
 
-# Folder to save recordings
+# Make folder
 os.makedirs("recordings", exist_ok=True)
 
-# Buffer to store audio frames
-audio_frames = []
+# HTML + JS widget
+record_component = """
+    <script>
+    let mediaRecorder;
+    let audioChunks = [];
+
+    function startRecording() {
+        navigator.mediaDevices.getUserMedia({ audio: true })
+        .then(stream => {
+            mediaRecorder = new MediaRecorder(stream);
+
+            mediaRecorder.ondataavailable = e => {
+                audioChunks.push(e.data);
+            };
+
+            mediaRecorder.onstop = () => {
+                let blob = new Blob(audioChunks, { type: 'audio/webm' });
+                audioChunks = [];
+
+                let reader = new FileReader();
+                reader.readAsDataURL(blob);
+                reader.onloadend = () => {
+                    let base64Data = reader.result;
+                    window.parent.postMessage({ type: 'audio', data: base64Data }, "*");
+                };
+            };
+
+            mediaRecorder.start();
+        });
+    }
+
+    function stopRecording() {
+        mediaRecorder.stop();
+    }
+    </script>
+
+    <button onclick="startRecording()">🎙️ Start Recording</button>
+    <button onclick="stopRecording()">⏹ Stop Recording</button>
+"""
+
+st.markdown(record_component, unsafe_allow_html=True)
+
+# Receive data
+data = st.experimental_get_query_params().get("audio_data", [None])[0]
+
+# Use JS event listener for audio data
+st.markdown("""
+<script>
+window.addEventListener("message", (event) => {
+    if (event.data.type === "audio") {
+        const queryString = window.location.search;
+        const urlParams = new URLSearchParams(queryString);
+        urlParams.set("audio_data", event.data.data);
+        const newUrl = window.location.pathname + '?' + urlParams.toString();
+        window.location.href = newUrl;
+    }
+});
+</script>
+""", unsafe_allow_html=True)
 
 
-def audio_callback(frame: av.AudioFrame):
-    global audio_frames
-    audio = frame.to_ndarray()
-    audio_frames.append(audio)
-    return frame
+if data:
+    st.success("Recording received!")
 
+    # Decode base64
+    header, encoded = data.split(",", 1)
+    audio_bytes = base64.b64decode(encoded)
 
-webrtc_streamer(
-    key="speech-recorder",
-    mode=WebRtcMode.SENDONLY,
-    audio_receiver_size=1024,
-    rtc_configuration={"iceServers": [{"urls": ["stun:stun.l.google.com:19302"]}]},
-    client_settings=ClientSettings(
-        media_stream_constraints={"audio": True, "video": False}
-    ),
-    audio_frame_callback=audio_callback,
-)
+    st.audio(audio_bytes, format="audio/webm")
 
-st.write("")
+    filename = f"speech_{int(time.time())}.webm"
+    filepath = f"recordings/{filename}"
 
-if st.button("💾 Save Recording"):
-    if len(audio_frames) == 0:
-        st.error("No audio recorded yet!")
-    else:
-        # Convert list to numpy array
-        audio_np = np.concatenate(audio_frames, axis=1)
+    # Save
+    with open(filepath, "wb") as f:
+        f.write(audio_bytes)
 
-        # Create WAV file
-        filename = f"recording_{int(time.time())}.wav"
-        filepath = os.path.join("recordings", filename)
+    st.success(f"Saved as {filename}")
 
-        with wave.open(filepath, "wb") as f:
-            f.setnchannels(1)
-            f.setsampwidth(2)
-            f.setframerate(48000)
-            f.writeframes(audio_np.tobytes())
-
-        st.success(f"Recording saved as {filename}")
-
-        # Provide download button
-        with open(filepath, "rb") as f:
-            audio_bytes = f.read()
-
-        st.audio(audio_bytes, format="audio/wav")
-        st.download_button(
-            label="⬇ Download Recording",
-            data=audio_bytes,
-            file_name=filename,
-            mime="audio/wav",
-        )
-
-        audio_frames.clear()
+    st.download_button(
+        label="⬇ Download Recording",
+        data=audio_bytes,
+        file_name=filename,
+        mime="audio/webm",
+    )
