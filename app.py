@@ -9,7 +9,7 @@ import zipfile
 import numpy as np
 
 # ---------- Configuration ----------
-st.set_page_config(page_title="Speech Data Curation (Upgraded)", layout="wide")
+st.set_page_config(page_title="Speech Data Curation (High-Quality)", layout="wide")
 
 DEFAULT_ADMIN_PASSWORD = "adminpass"
 BASE_DIR = Path("recordings")
@@ -58,9 +58,9 @@ def _plot_waveform(audio_bytes):
         st.warning("Unable to plot waveform.")
 
 # ---------- UI ----------
-st.title("🎤 Speech Data Curation — Multi-user (Upgraded)")
+st.title("🎤 Speech Data Curation — Multi-Recording High-Quality")
 st.markdown(
-    "Record speech, see waveform feedback, previous recordings, and admin can monitor immediately."
+    "Record multiple high-quality speech samples. Waveform shown for verification. Admin sees recordings immediately."
 )
 
 st.sidebar.header("Quick actions")
@@ -68,8 +68,8 @@ mode = st.sidebar.radio("Choose view", ["Record (User)", "Admin Dashboard"])
 
 # ---------- USER RECORDING FLOW ----------
 if mode == "Record (User)":
-    st.header("User recording")
-    st.info("Enter a username (no password). Recordings auto-save to admin folder.")
+    st.header("User Recording")
+    st.info("Enter a username. Each recording auto-saves immediately.")
 
     username = st.text_input("Enter your username", value="", max_chars=50)
 
@@ -81,12 +81,14 @@ if mode == "Record (User)":
             user_dir = BASE_DIR / safe_username
             user_dir.mkdir(parents=True, exist_ok=True)
 
-            st.write(f"Recording as **{safe_username}**. Your recordings will be saved in `{user_dir}/`")
+            st.write(f"Recording as **{safe_username}**. Files stored in `{user_dir}/`")
 
             with st.expander("Optional: text prompt for the speaker"):
                 prompt_text = st.text_area("Prompt (e.g., sentence to read)", value="Please read this sentence aloud.", height=80)
 
             st.markdown("**Press the mic to start/stop recording**")
+
+            # Recorder with WAV output (high quality)
             audio_bytes = audio_recorder(
                 text="Click to record",
                 recording_color="#FF3333",
@@ -94,12 +96,14 @@ if mode == "Record (User)":
             )
 
             if audio_bytes:
+                # Save file with timestamp
                 ts = int(time.time())
                 filename = f"{safe_username}_{ts}.wav"
                 filepath = user_dir / filename
                 with open(filepath, "wb") as f:
                     f.write(audio_bytes)
 
+                # Update metadata
                 metadata = _load_metadata(user_dir)
                 entry = {
                     "filename": filename,
@@ -114,11 +118,11 @@ if mode == "Record (User)":
                 st.audio(audio_bytes, format="audio/wav")
                 st.download_button("⬇ Download this recording", audio_bytes, file_name=filename, mime="audio/wav")
 
-                # Waveform plot
+                # Waveform
                 st.subheader("📊 Waveform")
                 _plot_waveform(audio_bytes)
 
-            # Show previous recordings
+            # Show all previous recordings for this user
             st.subheader("🗂️ Your previous recordings")
             prev_files = _user_recordings(user_dir)
             if prev_files:
@@ -136,7 +140,7 @@ if mode == "Record (User)":
 
 # ---------- ADMIN DASHBOARD ----------
 else:
-    st.header("Admin dashboard")
+    st.header("Admin Dashboard")
     st.info("Protected by admin password. Set in Streamlit Secrets or default 'adminpass'.")
 
     admin_password = st.secrets.get("admin_password", DEFAULT_ADMIN_PASSWORD) if hasattr(st, "secrets") else DEFAULT_ADMIN_PASSWORD
@@ -150,7 +154,7 @@ else:
     users = _list_users()
     st.subheader(f"Users ({len(users)})")
     if not users:
-        st.info("No users yet. Users' folders will be created once they record.")
+        st.info("No users yet.")
     else:
         for u in users:
             user_dir = BASE_DIR / u
@@ -225,6 +229,5 @@ else:
 
     st.markdown("---")
     st.write("Admin tips:")
-    st.write("- Set a strong admin password in Streamlit Secrets (key: `admin_password`).")
-    st.write("- Users’ recordings are auto-saved and visible to admin immediately.")
-    st.write("- Optional upgrades: global ZIP export, speaker metadata fields, Whisper transcription.")
+    st.write("- Strong admin password recommended (set in Streamlit Secrets).")
+    st.write("- Users can record multiple times; all recordings are immediately saved and visible to admin.")
