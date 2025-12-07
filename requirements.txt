@@ -1,3 +1,2 @@
 streamlit
-streamlit-audio-recorder
-werkzeug
+streamlit-js-eval
